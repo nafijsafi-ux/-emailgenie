@@ -1,0 +1,121 @@
+Build a professional full-stack web application called "EmailGenie" - an AI Email Generation Assistant with Model Comparison and Evaluation System.
+
+TECH STACK:
+- Frontend: React + TypeScript + Tailwind CSS + Shadcn UI + Framer Motion
+- Backend: Node.js + Express
+- AI: Groq API (two models compared side by side)
+- Charts: Recharts
+- Data: localStorage for history, CSV export functionality
+- Routing: Wouter
+- Data fetching: TanStack React Query
+- Font: Plus Jakarta Sans from Google Fonts
+- Default theme: DARK MODE as the default (force dark class on html element on load)
+
+---
+
+CRITICAL — AI MODELS TO USE (these are the only two valid model IDs, do not substitute):
+- Model A: "llama-3.3-70b-versatile"
+- Model B: "openai/gpt-oss-120b"
+Both are current, active, free-tier models on Groq as of 2026. Do not use any deepseek model — it has been deprecated and will cause API errors.
+
+---
+
+FILE STRUCTURE REQUIREMENT (important — keep this clean):
+- All backend route logic must live in a routes/ folder, organized by feature (e.g. routes/email.ts, routes/share.ts, routes/health.ts)
+- A routes/index.ts file must combine all individual routers into one and export it
+- app.ts sets up Express, middleware (cors, json), and mounts the combined router at /api
+- index.ts (root) must ONLY contain the server startup code (app.listen) — nothing else. Keep it under 5 lines.
+
+---
+
+VISUAL DESIGN REQUIREMENTS:
+- Dark mode by default across the entire app
+- Plus Jakarta Sans font for all text
+- Generator page: subtle dot-grid pattern background behind a soft radial gradient hero section at the top
+- Page headings use a subtle gradient text effect (foreground to foreground/70)
+- Generate button has a gradient background (primary to primary/80), soft glow shadow, and a slight scale-up on hover
+- A thin animated loading bar fixed to the top of the screen, visible only while any AI generation or evaluation request is in progress
+- Comparison page: overall score numbers displayed large and bold (text-4xl, font-black)
+- Comparison page: small "tech spec" badges under each model name showing parameter count and context window (e.g. "70B params", "131K ctx")
+- Report page: stat cards use a subtle gradient background, with the better-performing model's card highlighted in a primary-color gradient
+
+---
+
+PAGES (5 total):
+
+1. GENERATOR PAGE (home):
+- Form with: Intent (text input), Key Facts (textarea), Tone (dropdown with 7 options: Formal, Professional, Casual, Apologetic, Empathetic, Urgent, Friendly — each showing a one-line description badge when selected), Business Name (text input)
+- 5 clickable template preset pills above the form (Sales Follow-Up, Job Application, Client Onboarding, Apology/Issue, Partnership Pitch) that instantly fill all fields when clicked, with a dismissible banner confirming which preset is active and a "Clear" link to reset
+- Generate button with loading spinner, calls backend, navigates to Comparison page on success
+- Two small info cards at the bottom showing each model name and its prompting technique
+
+2. COMPARISON PAGE:
+- Two-column side-by-side layout
+- Each column shows: model name, tech spec badges, prompt technique badge (Advanced Prompt vs Basic Prompt), the generated email in a scrollable card, three animated progress bars for the three metrics, a large bold overall score number, Copy button, Star button
+- Winner badge (trophy icon) appears above the higher-scoring model's card
+- A winner banner below both cards summarizing the result, or a "tie" message
+- "Save to History" button (disabled until both evaluations complete)
+- "Share" button that POSTs the comparison data to a new backend endpoint, gets back a short ID, builds a shareable URL, and copies it to the clipboard with a toast confirmation
+- IMPORTANT BUG TO AVOID: if a user stars a reply AFTER already saving to history, the star state must update the already-saved history entry too (not just local component state) — implement an updateEntry function in the history hook for this
+
+3. HISTORY PAGE:
+- Two tabs: "All Generations" and "Starred"
+- Search bar filtering by intent or business name
+- Each entry is an expandable card showing both model scores side by side, with an expand/collapse to view both full emails
+- Export to CSV button (must include ALL THREE metric scores for both models, not just overall score)
+- Clear all history button with a confirmation dialog
+- Star toggle button must also be usable directly from the History page (not just from Comparison page)
+
+4. REPORT PAGE:
+- Stat cards: Total Generations, Avg Score Model A, Avg Score Model B, Win Count
+- Bar chart comparing average scores of both models across the 3 metrics
+- Line chart showing score trends over time
+- Auto-generated written analysis section (plain text, dynamically computed from real data) covering: which model won overall, the losing model's weakest metric and why, and a production recommendation
+- Export to PDF button (using window.print with proper print styles)
+- Empty state when no history exists yet
+
+5. SHARE PAGE (public, read-only):
+- Accessible at /share/:id with no navigation required
+- Fetches the shared comparison data from the backend by ID
+- Displays both model results in a clean read-only layout with a "Shared via EmailGenie" badge
+- Shows a friendly "not found" message if the link is invalid or expired
+
+---
+
+BACKEND API ROUTES (organize these inside routes/email.ts and routes/share.ts):
+
+POST /api/generate-emails
+- Receives: intent, keyFacts, tone, businessName
+- Calls Groq API with both models simultaneously using Promise.all
+- Model A (llama-3.3-70b-versatile) uses an ADVANCED prompting technique: a system message establishing an expert email-writer persona, PLUS two full few-shot example pairs presented as real conversation turns (system → user → assistant → user → assistant → user) before the actual request
+- Model B (openai/gpt-oss-120b) uses a BASIC prompting technique: a single plain-instruction user message only, no system prompt, no examples
+- Returns both emails as { modelA, modelB }
+
+POST /api/evaluate
+- Receives: emailText, keyFacts, tone
+- Metric 1 (Fact Recall Score, 0-10): pure JavaScript keyword matching — split key facts into lines, strip common stop words, check if at least 50% of each fact's meaningful words appear in the email, score = (facts matched / total facts) * 10
+- Metric 2 (Tone Accuracy Score, 0-10): LLM-as-judge — call llama-3.3-70b-versatile with a structured 0-10 rubric, instruct it to respond with ONLY a JSON object like {"score": 8} for reliable parsing
+- Metric 3 (Professional Quality Score, 0-10): LLM-as-judge — same approach as Metric 2, judging grammar, structure, and clarity
+- Overall score = average of all three, rounded to 1 decimal
+- Returns { factRecallScore, toneAccuracyScore, professionalQualityScore, overallScore }
+
+POST /api/share
+- Stores the submitted comparison data in an in-memory Map with a randomly generated short ID
+- Returns { id }
+
+GET /api/share/:id
+- Looks up the ID in the in-memory Map
+- Returns the stored data, or a 404 JSON error if not found
+
+---
+
+GENERAL REQUIREMENTS:
+- Proper error handling on every API call with user-friendly toast notifications (using sonner)
+- Loading skeletons while content is generating or evaluating
+- Smooth page transition animations using Framer Motion
+- Empty states on History and Report pages when no data exists
+- Fully responsive for mobile and desktop
+- A clean README.md explaining setup, environment variables needed (GROQ_API_KEY), and how to run the project
+- Environment variable needed: GROQ_API_KEY
+
+This is a portfolio project for an AI Engineer job application — the UI should look premium, the architecture should be clean and organized, and the app must work end-to-end without errors: generate → compare → save → history → report → share.
