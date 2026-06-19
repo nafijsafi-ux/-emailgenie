@@ -25,6 +25,6 @@ EmailGenie generates professional emails using AI, compares two prompting strate
 1. Clone the repository
 
 ## About This Project
-Built by Nafij Jakir as a technical assessment project for [Company Name].
+Built by Nafij Jakir as a technical assessment project for SG Service.
 © 2026 Nafij Jakir. All rights reserved.
 This code is shared publicly for portfolio and evaluation purposes only.
