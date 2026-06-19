@@ -359,9 +359,9 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs font-medium">
         <span>{label}</span>
-        <span className="text-muted-foreground">{score}/100</span>
+        <span className="text-muted-foreground">{score}/10</span>
       </div>
-      <Progress value={val} className="h-1.5" />
+      <Progress value={val * 10} className="h-1.5" />
     </div>
   );
 }
