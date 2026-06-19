@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { motion } from "framer-motion";
-import { Copy, Star, Trophy, ArrowLeft, Loader2, Share2, Save } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Copy, Star, Trophy, ArrowLeft, Loader2, Share2, Save, CheckCheck } from "lucide-react";
 import { useEvaluateEmail, useCreateShare } from "@workspace/api-client-react";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,29 @@ type LocationState = {
   inputs: { intent: string; keyFacts: string; tone: string; businessName: string };
 };
 
+// Smooth count-up from 0 → target over `duration` ms
+function useCountUp(target: number | null, duration = 1200) {
+  const [display, setDisplay] = useState(0);
+  const raf = useRef<number>(0);
+
+  useEffect(() => {
+    if (target === null) { setDisplay(0); return; }
+    const start = performance.now();
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(eased * target * 10) / 10);
+      if (progress < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, duration]);
+
+  return display;
+}
+
 export default function ComparisonPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -25,6 +48,7 @@ export default function ComparisonPage() {
   const [modelBEval, setModelBEval] = useState<EvaluationResult | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isStarred, setIsStarred] = useState(false);
+  const [winnerRevealed, setWinnerRevealed] = useState(false);
 
   const evaluateEmailA = useEvaluateEmail();
   const evaluateEmailB = useEvaluateEmail();
@@ -32,57 +56,36 @@ export default function ComparisonPage() {
 
   useEffect(() => {
     const raw = sessionStorage.getItem("comparisonData");
-    if (!raw) {
-      setLocation("/");
-      return;
-    }
+    if (!raw) { setLocation("/"); return; }
     const historyState = JSON.parse(raw) as LocationState;
-    if (!historyState?.models) {
-      setLocation("/");
-      return;
-    }
+    if (!historyState?.models) { setLocation("/"); return; }
     setState(historyState);
 
-    // Trigger evaluations on mount — use separate mutation instances
-    // to avoid the second call overwriting the first
     evaluateEmailA.mutate(
-      {
-        data: {
-          emailText: historyState.models.modelA,
-          keyFacts: historyState.inputs.keyFacts,
-          tone: historyState.inputs.tone,
-        },
-      },
-      {
-        onSuccess: (data) => setModelAEval(data),
-      }
+      { data: { emailText: historyState.models.modelA, keyFacts: historyState.inputs.keyFacts, tone: historyState.inputs.tone } },
+      { onSuccess: (data) => setModelAEval(data) }
     );
-
     evaluateEmailB.mutate(
-      {
-        data: {
-          emailText: historyState.models.modelB,
-          keyFacts: historyState.inputs.keyFacts,
-          tone: historyState.inputs.tone,
-        },
-      },
-      {
-        onSuccess: (data) => setModelBEval(data),
-      }
+      { data: { emailText: historyState.models.modelB, keyFacts: historyState.inputs.keyFacts, tone: historyState.inputs.tone } },
+      { onSuccess: (data) => setModelBEval(data) }
     );
   }, []);
 
+  // Delay the winner reveal for drama — fires 900ms after both evals land
+  useEffect(() => {
+    if (modelAEval && modelBEval) {
+      const t = setTimeout(() => setWinnerRevealed(true), 900);
+      return () => clearTimeout(t);
+    }
+  }, [modelAEval, modelBEval]);
+
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: "Copied",
-      description: "Email copied to clipboard",
-    });
+    toast({ title: "Copied", description: "Email copied to clipboard" });
   };
 
   const handleSave = () => {
     if (!state || !modelAEval || !modelBEval) return;
-
     const id = history.addEntry({
       intent: state.inputs.intent,
       businessName: state.inputs.businessName,
@@ -95,41 +98,24 @@ export default function ComparisonPage() {
       starred: isStarred,
     });
     setSavedId(id);
-    toast({
-      title: "Saved to History",
-      description: "You can view this comparison later.",
-    });
+    toast({ title: "Saved to History", description: "You can view this comparison later." });
   };
 
   const toggleStar = () => {
     const newStarred = !isStarred;
     setIsStarred(newStarred);
-    if (savedId) {
-      history.updateEntry(savedId, { starred: newStarred });
-    }
+    if (savedId) history.updateEntry(savedId, { starred: newStarred });
   };
 
   const handleShare = () => {
     if (!state || !modelAEval || !modelBEval) return;
-
     createShare.mutate(
-      {
-        data: {
-          data: {
-            inputs: state.inputs,
-            models: state.models,
-            evals: { modelA: modelAEval, modelB: modelBEval },
-          },
-        },
-      },
+      { data: { data: { inputs: state.inputs, models: state.models, evals: { modelA: modelAEval, modelB: modelBEval } } } },
       {
         onSuccess: (res) => {
           const url = `${window.location.origin}/share/${res.id}`;
           navigator.clipboard.writeText(url);
-          toast({
-            title: "Link Copied!",
-            description: "Share link has been copied to your clipboard.",
-          });
+          toast({ title: "Link Copied!", description: "Share link has been copied to your clipboard." });
         },
       }
     );
@@ -149,22 +135,34 @@ export default function ComparisonPage() {
 
   return (
     <div className="w-full flex flex-col relative pb-20">
-      {/* Top Loading Bar */}
-      {isEvaluating && (
-        <div className="fixed top-0 left-0 right-0 h-1 z-50 overflow-hidden bg-primary/20">
-          <div className="h-full bg-primary animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite] w-full origin-left scale-x-50"></div>
-        </div>
-      )}
+      {/* Animated top loading bar */}
+      <AnimatePresence>
+        {isEvaluating && (
+          <motion.div
+            className="fixed top-0 left-0 right-0 h-[3px] z-50 bg-primary/20 overflow-hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary w-1/2"
+              animate={{ x: ["-100%", "250%"] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="container mx-auto px-4 py-8">
+        {/* Header row */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
           <div>
-            <Button variant="ghost" className="mb-2 -ml-2 text-muted-foreground hover:text-foreground" onClick={() => setLocation("/")}>
+            <Button variant="ghost" className="mb-2 -ml-2 text-muted-foreground hover:text-foreground" onClick={() => setLocation("/generate")}>
               <ArrowLeft className="w-4 h-4 mr-2" /> Back to Generator
             </Button>
             <h1 className="text-3xl font-bold tracking-tight">Model Comparison</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Evaluating output against key facts and intended tone.
+              {isEvaluating ? "Evaluating outputs — scoring fact recall, tone, and quality…" : "Evaluation complete. Results are in."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -177,11 +175,7 @@ export default function ComparisonPage() {
               {isStarred ? "Starred" : "Star"}
             </Button>
             <Button variant="secondary" onClick={handleSave} disabled={isEvaluating || !!savedId}>
-              {savedId ? (
-                <>Saved <Save className="w-4 h-4 ml-2" /></>
-              ) : (
-                <>Save to History</>
-              )}
+              {savedId ? <><CheckCheck className="w-4 h-4 mr-2" /> Saved</> : <>Save to History</>}
             </Button>
             <Button onClick={handleShare} disabled={isEvaluating || createShare.isPending}>
               {createShare.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Share2 className="w-4 h-4 mr-2" />}
@@ -190,27 +184,42 @@ export default function ComparisonPage() {
           </div>
         </div>
 
-        {isComplete && winner && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`w-full p-4 rounded-lg border mb-8 flex items-center justify-center text-lg font-medium ${
-              winner === "Tie"
-                ? "bg-secondary/20 border-secondary/50"
-                : "bg-primary/10 border-primary/30 text-primary-foreground"
-            }`}
-          >
-            {winner === "Tie" ? (
-              "It's a Tie! Both models performed equally well."
-            ) : (
-              <span className="flex items-center gap-2 text-primary">
-                <Trophy className="w-6 h-6 text-yellow-500" />
-                Model {winner} is the recommended choice
-              </span>
-            )}
-          </motion.div>
-        )}
+        {/* Winner banner — slides in after delay */}
+        <AnimatePresence>
+          {winnerRevealed && winner && (
+            <motion.div
+              key="winner-banner"
+              initial={{ opacity: 0, y: -16, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+              className={`w-full p-5 rounded-xl border mb-8 flex items-center justify-center gap-3 text-lg font-semibold ${
+                winner === "Tie"
+                  ? "bg-secondary/20 border-secondary/50 text-muted-foreground"
+                  : "bg-gradient-to-r from-yellow-500/10 via-primary/10 to-yellow-500/10 border-yellow-500/30"
+              }`}
+            >
+              {winner === "Tie" ? (
+                "It's a Tie — both models are evenly matched."
+              ) : (
+                <>
+                  <motion.div
+                    initial={{ rotate: -20, scale: 0 }}
+                    animate={{ rotate: 0, scale: 1 }}
+                    transition={{ delay: 0.15, type: "spring", stiffness: 300, damping: 15 }}
+                  >
+                    <Trophy className="w-7 h-7 text-yellow-500" />
+                  </motion.div>
+                  <span className="text-foreground">
+                    <span className="text-yellow-500 font-black">Model {winner}</span> is the recommended choice
+                  </span>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
+        {/* Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <ModelCard
             title="Model A"
@@ -219,9 +228,9 @@ export default function ComparisonPage() {
             promptBadge="Advanced Prompt"
             email={state.models.modelA}
             evalResult={modelAEval}
-            isWinner={winner === "A"}
+            isWinner={winnerRevealed && winner === "A"}
             onCopy={() => handleCopy(state.models.modelA)}
-            delay={0.1}
+            cardDelay={0.05}
           />
           <ModelCard
             title="Model B"
@@ -230,9 +239,9 @@ export default function ComparisonPage() {
             promptBadge="Basic Prompt"
             email={state.models.modelB}
             evalResult={modelBEval}
-            isWinner={winner === "B"}
+            isWinner={winnerRevealed && winner === "B"}
             onCopy={() => handleCopy(state.models.modelB)}
-            delay={0.2}
+            cardDelay={0.12}
           />
         </div>
       </div>
@@ -249,7 +258,7 @@ function ModelCard({
   evalResult,
   isWinner,
   onCopy,
-  delay
+  cardDelay,
 }: {
   title: string;
   modelName: string;
@@ -259,79 +268,112 @@ function ModelCard({
   evalResult: EvaluationResult | null;
   isWinner: boolean;
   onCopy: () => void;
-  delay: number;
+  cardDelay: number;
 }) {
+  const score = useCountUp(evalResult?.overallScore ?? null, 1100);
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay }}
-      className={`relative rounded-xl border bg-card/60 backdrop-blur-sm overflow-hidden flex flex-col ${
-        isWinner ? "border-primary/50 shadow-[0_0_30px_rgba(var(--primary),0.1)]" : "border-border/50"
-      }`}
+      transition={{ delay: cardDelay, duration: 0.45, ease: "easeOut" }}
+      className="relative rounded-xl border bg-card/60 backdrop-blur-sm overflow-hidden flex flex-col"
+      style={{
+        borderColor: isWinner ? "hsl(var(--primary) / 0.5)" : undefined,
+      }}
     >
+      {/* Winner glow — pulses after reveal */}
+      <AnimatePresence>
+        {isWinner && (
+          <motion.div
+            key="winner-glow"
+            className="absolute inset-0 pointer-events-none rounded-xl z-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 1, 0.6] }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            style={{ boxShadow: "0 0 50px hsl(var(--primary) / 0.25) inset" }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Ambient corner glow for winner */}
       {isWinner && (
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 blur-[50px] pointer-events-none" />
+        <div className="absolute top-0 right-0 w-40 h-40 bg-primary/15 blur-[60px] pointer-events-none z-0" />
       )}
-      
-      <div className="p-5 border-b border-border/50 bg-background/50 flex flex-col gap-3">
+
+      {/* Header */}
+      <div className="relative z-10 p-5 border-b border-border/50 bg-background/50 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold">{title}</h2>
-            {isWinner && (
-              <Badge variant="default" className="bg-yellow-500/20 text-yellow-500 hover:bg-yellow-500/30 border-yellow-500/50">
-                <Trophy className="w-3 h-3 mr-1" /> Winner
-              </Badge>
-            )}
+            <AnimatePresence>
+              {isWinner && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.5, x: -8 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 18 }}
+                >
+                  <Badge className="bg-yellow-500/20 text-yellow-500 border-yellow-500/40 hover:bg-yellow-500/30">
+                    <Trophy className="w-3 h-3 mr-1" /> Winner
+                  </Badge>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <Badge variant="outline" className="font-mono text-xs">{promptBadge}</Badge>
         </div>
-        
         <div>
           <div className="text-sm font-mono text-muted-foreground mb-2">{modelName}</div>
           <div className="flex gap-2">
             {badges.map((b) => (
-              <Badge key={b} variant="secondary" className="text-[10px] px-1.5 py-0">
-                {b}
-              </Badge>
+              <Badge key={b} variant="secondary" className="text-[10px] px-1.5 py-0">{b}</Badge>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="p-5 flex-1 flex flex-col gap-6">
-        {/* Scores */}
+      {/* Body */}
+      <div className="relative z-10 p-5 flex-1 flex flex-col gap-6">
         <div className="bg-background/40 rounded-lg p-4 border border-border/30">
           {!evalResult ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Evaluating...</span>
+                <span className="text-muted-foreground">Evaluating…</span>
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               </div>
-              <div className="space-y-2">
-                <div className="h-2 bg-secondary/50 rounded-full w-full animate-pulse" />
-                <div className="h-2 bg-secondary/50 rounded-full w-[80%] animate-pulse" />
-                <div className="h-2 bg-secondary/50 rounded-full w-[90%] animate-pulse" />
+              <div className="space-y-2.5">
+                {[100, 80, 90].map((w, i) => (
+                  <div key={i} className={`h-2 bg-secondary/50 rounded-full animate-pulse`} style={{ width: `${w}%` }} />
+                ))}
               </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
+              {/* Count-up overall score */}
+              <div className="flex items-end justify-between mb-2">
                 <span className="text-sm font-medium text-muted-foreground">Overall Score</span>
-                <span className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  {evalResult.overallScore}
-                </span>
+                <motion.span
+                  className="text-5xl font-black leading-none tabular-nums bg-clip-text text-transparent bg-gradient-to-br from-primary to-primary/60"
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                >
+                  {score.toFixed(1)}
+                </motion.span>
               </div>
-              
-              <ScoreBar label="Fact Recall" score={evalResult.factRecallScore} />
-              <ScoreBar label="Tone Accuracy" score={evalResult.toneAccuracyScore} />
-              <ScoreBar label="Professional Quality" score={evalResult.professionalQualityScore} />
+
+              <div className="h-px bg-border/40 mb-1" />
+
+              {/* Staggered metric bars */}
+              <ScoreBar label="Fact Recall" score={evalResult.factRecallScore} barDelay={0} />
+              <ScoreBar label="Tone Accuracy" score={evalResult.toneAccuracyScore} barDelay={120} />
+              <ScoreBar label="Professional Quality" score={evalResult.professionalQualityScore} barDelay={240} />
             </div>
           )}
         </div>
 
-        {/* Email Content */}
-        <div className="flex-1 min-h-[300px] flex flex-col relative group">
+        {/* Email output */}
+        <div className="flex-1 min-h-[280px] flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-semibold text-muted-foreground">Generated Output</span>
             <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground hover:text-foreground" onClick={onCopy}>
@@ -347,21 +389,32 @@ function ModelCard({
   );
 }
 
-function ScoreBar({ label, score }: { label: string; score: number }) {
+function ScoreBar({ label, score, barDelay }: { label: string; score: number; barDelay: number }) {
   const [val, setVal] = useState(0);
-  
+
   useEffect(() => {
-    const timer = setTimeout(() => setVal(score), 100);
-    return () => clearTimeout(timer);
-  }, [score]);
+    const t = setTimeout(() => setVal(score * 10), barDelay + 80);
+    return () => clearTimeout(t);
+  }, [score, barDelay]);
+
+  const color =
+    score >= 8 ? "hsl(var(--primary))" : score >= 5 ? "hsl(45 90% 55%)" : "hsl(0 72% 60%)";
 
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs font-medium">
-        <span>{label}</span>
-        <span className="text-muted-foreground">{score}/10</span>
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-semibold tabular-nums">{score.toFixed(1)}<span className="text-muted-foreground font-normal">/10</span></span>
       </div>
-      <Progress value={val * 10} className="h-1.5" />
+      <div className="h-1.5 w-full rounded-full bg-secondary/40 overflow-hidden">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ backgroundColor: color }}
+          initial={{ width: "0%" }}
+          animate={{ width: `${val}%` }}
+          transition={{ duration: 0.9, ease: [0.34, 1.1, 0.64, 1], delay: barDelay / 1000 }}
+        />
+      </div>
     </div>
   );
 }
