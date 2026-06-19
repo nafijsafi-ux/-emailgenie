@@ -5,11 +5,10 @@ import { Copy, Star, Trophy, ArrowLeft, Loader2, Share2, Save } from "lucide-rea
 import { useEvaluateEmail, useCreateShare } from "@workspace/api-client-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { useHistory, EvaluationResult, HistoryEntry } from "@/hooks/use-history";
+import { useHistory, EvaluationResult } from "@/hooks/use-history";
 
 type LocationState = {
   models: { modelA: string; modelB: string };
@@ -27,7 +26,8 @@ export default function ComparisonPage() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isStarred, setIsStarred] = useState(false);
 
-  const evaluateEmail = useEvaluateEmail();
+  const evaluateEmailA = useEvaluateEmail();
+  const evaluateEmailB = useEvaluateEmail();
   const createShare = useCreateShare();
 
   useEffect(() => {
@@ -43,8 +43,9 @@ export default function ComparisonPage() {
     }
     setState(historyState);
 
-    // Trigger evaluations on mount
-    evaluateEmail.mutate(
+    // Trigger evaluations on mount — use separate mutation instances
+    // to avoid the second call overwriting the first
+    evaluateEmailA.mutate(
       {
         data: {
           emailText: historyState.models.modelA,
@@ -57,7 +58,7 @@ export default function ComparisonPage() {
       }
     );
 
-    evaluateEmail.mutate(
+    evaluateEmailB.mutate(
       {
         data: {
           emailText: historyState.models.modelB,
