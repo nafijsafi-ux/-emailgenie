@@ -1,15 +1,18 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: EmailGenie API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: email
+    description: Email generation and evaluation
+  - name: share
+    description: Share comparison results
 paths:
   /healthz:
     get:
@@ -24,6 +27,119 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /generate-emails:
+    post:
+      operationId: generateEmails
+      tags: [email]
+      summary: Generate emails using two AI models
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailGenerationInput"
+      responses:
+        "200":
+          description: Generated emails from both models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailGenerationResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /evaluate:
+    post:
+      operationId: evaluateEmail
+      tags: [email]
+      summary: Evaluate an email for quality metrics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailEvaluationInput"
+      responses:
+        "200":
+          description: Evaluation scores for the email
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailEvaluationResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /share:
+    post:
+      operationId: createShare
+      tags: [share]
+      summary: Store a comparison result and return a short share ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareInput"
+      responses:
+        "200":
+          description: Share ID created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareCreated"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /share/{id}:
+    get:
+      operationId: getShare
+      tags: [share]
+      summary: Retrieve shared comparison data by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shared comparison data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareData"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +150,79 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    EmailGenerationInput:
+      type: object
+      required: [intent, keyFacts, tone, businessName]
+      properties:
+        intent:
+          type: string
+        keyFacts:
+          type: string
+        tone:
+          type: string
+        businessName:
+          type: string
+
+    EmailGenerationResult:
+      type: object
+      required: [modelA, modelB]
+      properties:
+        modelA:
+          type: string
+        modelB:
+          type: string
+
+    EmailEvaluationInput:
+      type: object
+      required: [emailText, keyFacts, tone]
+      properties:
+        emailText:
+          type: string
+        keyFacts:
+          type: string
+        tone:
+          type: string
+
+    EmailEvaluationResult:
+      type: object
+      required: [factRecallScore, toneAccuracyScore, professionalQualityScore, overallScore]
+      properties:
+        factRecallScore:
+          type: number
+        toneAccuracyScore:
+          type: number
+        professionalQualityScore:
+          type: number
+        overallScore:
+          type: number
+
+    ShareInput:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+
+    ShareCreated:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+
+    ShareData:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true

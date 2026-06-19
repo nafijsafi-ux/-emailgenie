@@ -5,7 +5,8 @@
  * EmailGenie API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ShareInputData } from './shareInputData';
 
-export interface HealthStatus {
-  status: string;
+export interface ShareInput {
+  data: ShareInputData;
 }
