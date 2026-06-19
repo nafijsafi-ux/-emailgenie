@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 import { Layout } from "@/components/layout";
+import LandingPage from "@/pages/landing";
 import GeneratorPage from "@/pages/generator";
 import ComparisonPage from "@/pages/comparison";
 import HistoryPage from "@/pages/history";
@@ -17,10 +18,11 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/share/:id" component={SharePage} />
+      <Route path="/" component={LandingPage} />
       <Route>
         <Layout>
           <Switch>
-            <Route path="/" component={GeneratorPage} />
+            <Route path="/generate" component={GeneratorPage} />
             <Route path="/comparison" component={ComparisonPage} />
             <Route path="/history" component={HistoryPage} />
             <Route path="/report" component={ReportPage} />
