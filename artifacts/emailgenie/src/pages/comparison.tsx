@@ -31,9 +31,13 @@ export default function ComparisonPage() {
   const createShare = useCreateShare();
 
   useEffect(() => {
-    // Read state from history
-    const historyState = window.history.state as LocationState;
-    if (!historyState || !historyState.models) {
+    const raw = sessionStorage.getItem("comparisonData");
+    if (!raw) {
+      setLocation("/");
+      return;
+    }
+    const historyState = JSON.parse(raw) as LocationState;
+    if (!historyState?.models) {
       setLocation("/");
       return;
     }

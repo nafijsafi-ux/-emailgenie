@@ -120,14 +120,9 @@ export default function GeneratorPage() {
       { data },
       {
         onSuccess: (result) => {
-          // Pass result state via history API (Wouter doesn't have native state, so we use window.history)
-          window.history.pushState(
-            {
-              models: result,
-              inputs: data,
-            },
-            "",
-            "/comparison"
+          sessionStorage.setItem(
+            "comparisonData",
+            JSON.stringify({ models: result, inputs: data })
           );
           setLocation("/comparison");
         },
